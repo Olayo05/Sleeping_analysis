@@ -167,7 +167,7 @@ def draw_ROC(tags_true,scores,tag_list):
     #tag_list, la lista de etiquetas de las clases
     fig, roc = plt.subplots()
     for i in tag_list:
-        fpr, tpr, thres = metrics.roc_curve(tags_true, scores[:,i-1],pos_label=i)
+        fpr, tpr, thres = metrics.roc_curve(tags_true, scores[:,i],pos_label=i)
         roc.plot(fpr,tpr,"-",label = i)
 
     
