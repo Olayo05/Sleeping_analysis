@@ -19,129 +19,27 @@ import seaborn as sns
 from sklearn.metrics import silhouette_samples, silhouette_score
 from sklearn.cluster import KMeans
 
-def aviris_data_load():
+def agrupar_epocas(raw):
+    # agrupamos en epocas de 30 muestras los datos. Por Miguel Hortelano
+    #Los resumimos con algúm tipo de estadístico (en este caso energías beta, alpha y media y std)
+    data = raw.get_data() * 1e6#pasamos a voltios y transfomamos raw en una matriz
+    
+    mediastd = np.zeros([data.shape[0]*4, int(data.shape[1]/(30*100))])
+    print(mediastd.shape)
         
-    # Lectura de la imagen de fichero de Matlab .mat
-    mat_file =  "datasetB1.mat"
-    mat = matlab.loadmat(mat_file,squeeze_me=True) #devuelve un dictionary
-    list(mat.keys()) #variables almacenadas
-    
-    
-    # Lectura de los datos
-    X = mat["X"]   #imagen (hipercubo 3D: filas x columnas x variables) 
-    Xl = mat["Xl"]   #muestras etiquetadas (muestas x variables) 
-    Yl = mat["Yl"]   #etiquetas de clases (muestras x 1, 0=sin clase)   
-    del mat
-    Yl.shape
-    
-    
-    # Reshape del Ground Truth como una imagen
-    Y = np.reshape(Yl, (X.shape[0], X.shape[1]),order="F")
-    Y.shape
-    
-    
-    # Filter background: eliminamos la clase 0 de los datos etiquetados
-    Nc=Yl.max()-Yl.min()+1
-    if Nc>2:
-        Xl = Xl[Yl != 0,:];
-        Yl = Yl[Yl != 0];
-    
-    return([X,Y,Xl,Yl])
+    for i in np.arange(0,int(mediastd.shape[1])):
+                I = int(i*30)
 
-def data_reducer():
-    X,Y,Xl,Yl = aviris_data_load()
-
-    n_tags = max(Yl)
-    ratio = 5000/Xl.shape[0]
-    #separamos según etiqueta
-    tag_list = np.arange(1,n_tags+1)#lista de etiquetas
-    tag_index_list = [np.where(Yl == i) for i in tag_list]#lista con las posiciones de cada etiqueta
-    #subconjuntos de Yl y Xl de cada etiqueta
-    X_index_sample= [Xl[indx,:] for indx in tag_index_list]
+                for j in np.arange(0,data.shape[0]):#resumimos los datos
+                    mediastd[j, i] = np.mean(data[j, I:I+30])
+                    mediastd[j+data.shape[0], i] = np.std(data[j, I:I+30])
+                    mediastd[j+data.shape[0]*2, i] = yasa.bandpower(data[j, I:I+30], sf=100).Beta
+                    mediastd[j+data.shape[0]*3, i] = yasa.bandpower(data[j, I:I+30], sf=100).Alpha
+                    
+    #Transponemos la matriz para que tenga las dimensiones (muestras,caracteristicas)    
+    mediastd = np.array(mediastd).T
     
-    
-    #preparamos los vectores reducidos
-    X_reduced = []
-    Y_reduced = []
-    
-    #Llenamos los libros reducidos
-    for i in range(len(tag_list)):
-        
-        data = X_index_sample[i][0,:,:]
-        n_points_reduced = int(np.ceil(data.shape[0]*ratio))
-        cluster = KMeans(n_points_reduced).fit(data)
-        centers = cluster.cluster_centers_.squeeze()
-        
-        newdata = list()
-        
-        #Seleccionamos el punto más cercano al centroide para evitar distorisionar la distribución de los puntos
-        for z in range(centers.shape[0]):
-            d = [np.linalg.norm(data[j,:]-centers[z,:]) for j in range(data.shape[0])]
-            indx = d.index(min(d))
-            newdata.append(data[indx])
-            
-            
-        X_reduced.append(newdata)
-        Y_reduced.append(np.ones(n_points_reduced)*tag_list[i])
-    
-    X_reduced = np.concatenate(X_reduced)
-    Y_reduced = np.concatenate(Y_reduced)
-    
-    return((X_reduced,Y_reduced))
-    
-def class_map(X_,image,tag = ["Kmeans",0,0],):
-    a = image.shape
-    cluster_labels = image.reshape([a[0]*a[1]])
-    n_clusters = np.max(cluster_labels)+1
-    
-    #Parte donde se dibuja la imagen
-    cmap = cm.get_cmap('tab20c', n_clusters) 
-    
-    fig, (ax1,ax2) = plt.subplots(1,2)
-    plt.imshow(image,cmap = cmap)
-    plt.colorbar()
-    if tag[0]=="Kmeans":
-        plt.title("Kmeans "+str(n_clusters)+" clusters")
-    elif tag[0]=="Jerárquico":
-        plt.title("Jerárquico "+str(n_clusters)+" clusters")
-    elif tag[0]=="Gaussianas":
-        plt.title("Gaussianas "+str(n_clusters)+" clusters tipo "+tag[2])
-    else:
-        plt.title(tag[0]+" "+str(tag[1])+" e "+str(tag[2])+" n min")
-    
-    #Galimatías donde se dibujan los silhouette
-    samples = silhouette_samples(X_,cluster_labels)
-    y_lower = 10
-    
-    silhouette_avg = silhouette_score(X_, cluster_labels)
-    for i in np.arange(0,n_clusters):
-        it_sample = samples[cluster_labels == i]
-        it_sample.sort()
-        
-        size_it_sample = it_sample.shape[0]
-        y_upper = y_lower + size_it_sample
-        
-        color = cm.nipy_spectral(float(i) / n_clusters)
-        ax1.fill_betweenx(
-            np.arange(y_lower, y_upper),
-            0,
-            it_sample,
-            facecolor=color,
-            edgecolor=color,
-            alpha=0.7,)
-    
-        ax1.text(-0.05, y_lower + 0.5 * size_it_sample, str(i))
-        
-        y_lower = y_upper+10
-    
-    ax1.set_title("The silhouette plot for the various clusters.")
-    ax1.set_xlabel("The silhouette coefficient values")
-    ax1.set_ylabel("Cluster label")
-    ax1.axvline(x=silhouette_avg, color="red", linestyle="--")   
-    ax1.set_yticks([])  # Clear the yaxis labels / ticks
-    ax1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
-    
-    return(0)
+    return mediastd
 
 def draw_ConfusionM(matrix,tag_list):
     
@@ -213,133 +111,139 @@ def draw_silhouette(X_,cluster_labels):
     ax.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])   
     return(0)
 
-def draw_image(image,method):
-    n_clases = int(max(image))
-    cmap = cm.get_cmap('tab20c', n_clases) 
-    
-    fig, (ax1) = plt.subplots(figsize=(5,5))
-    plt.imshow(image.reshape([145,145]),cmap = cmap)
-    plt.colorbar()
-    plt.title(method+" "+str(n_clases)+" clases")
-    ax = plt.gca()
+def extraer_caracteristicas(raw):
+    #Por Nacho Arnau
+    df2 = pd.DataFrame()
 
-    #hide x-axis
-    plt.gca().get_xaxis().set_visible(False)
-    plt.gca().get_yaxis().set_visible(False)
-    #hide y-axis
+    for canal in raw.ch_names:
 
-def draw_silhouette_plus(X_reshape,clstrs_Y_K9,clstrs_Y_G8,clstrs_Y_G18):
-    
-    sh = [0,0,0]
-    
-    fig, (sh1,sh2,sh3) = plt.subplots(1,3)
+        sls = yasa.SleepStaging(raw, eeg_name = canal)
+        features = sls.get_features()
+        for feat in features.columns:
 
-    samples = silhouette_samples(X_reshape,clstrs_Y_K9)
-    y_lower = 10
-    n_clusters = 9
-    silhouette_avg = silhouette_score(X_reshape,clstrs_Y_K9)
-    sh[0] = silhouette_avg
-    
-    for i in np.arange(0,n_clusters):
-        it_sample = samples[clstrs_Y_K9 == i]
-        it_sample.sort()
+            name_var = feat+'_'+canal
+            df2[name_var] = features[feat]
         
-        size_it_sample = it_sample.shape[0]
-        y_upper = y_lower + size_it_sample
-        
-        color = cm.nipy_spectral(float(i) / n_clusters)
-        sh1.fill_betweenx(
-            np.arange(y_lower, y_upper),
-            0,
-            it_sample,
-            facecolor=color,
-            edgecolor=color,
-            alpha=0.7,)
-    
-        sh1.text(-0.05, y_lower + 0.5 * size_it_sample, str(i))
-        
-        y_lower = y_upper+10
-    
-    sh1.set_title("KMeans")
-    #sh1.set_xlabel("The silhouette coefficient values")
-    sh1.set_ylabel("Cluster label")
-    sh1.axvline(x=silhouette_avg, color="red", linestyle="--")   
-    sh1.set_yticks([])  # Clear the yaxis labels / ticks
-    sh1.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
-    
-    samples = silhouette_samples(X_reshape,clstrs_Y_G8)
-    y_lower = 10
-    n_clusters = 8
-    silhouette_avg = silhouette_score(X_reshape,clstrs_Y_G8)
-    sh[1] = silhouette_avg
-    
-    for i in np.arange(0,n_clusters):
-        it_sample = samples[clstrs_Y_G8.reshape(145*145) == i]
-        it_sample.sort()
-        
-        size_it_sample = it_sample.shape[0]
-        y_upper = y_lower + size_it_sample
-        
-        color = cm.nipy_spectral(float(i) / n_clusters)
-        sh2.fill_betweenx(
-            np.arange(y_lower, y_upper),
-            0,
-            it_sample,
-            facecolor=color,
-            edgecolor=color,
-            alpha=0.7,)
-    
-        sh2.text(-0.05, y_lower + 0.5 * size_it_sample, str(i))
-        
-        y_lower = y_upper+10
-    
-    sh2.set_title("Gaussian Mixture")
-    sh2.set_xlabel("Silhouette coefficients")
-    sh2.set_ylabel("Cluster label")
-    sh2.axvline(x=silhouette_avg, color="red", linestyle="--")   
-    sh2.set_yticks([])  # Clear the yaxis labels / ticks
-    sh2.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
-    
-    n_clusters = 18
-    samples = silhouette_samples(X_reshape,clstrs_Y_G18)
-    y_lower = 10
+    return  df2
 
-    silhouette_avg = silhouette_score(X_reshape,clstrs_Y_G18)
-    sh[2] = silhouette_avg
-    for i in np.arange(0,n_clusters):
-        it_sample = samples[clstrs_Y_G18 == i]
-        it_sample.sort()
-        
-        size_it_sample = it_sample.shape[0]
-        y_upper = y_lower + size_it_sample
-        
-        color = cm.nipy_spectral(float(i) / n_clusters)
-        sh3.fill_betweenx(
-            np.arange(y_lower, y_upper),
-            0,
-            it_sample,
-            facecolor=color,
-            edgecolor=color,
-            alpha=0.7,)
+def train_loader(metodo = "nada"):
+    #cargamos los path a lso documentos
+    train_path_list = ['../data_sleep/8/8','../data_sleep/9/9']
+    out = 0
     
-        sh3.text(-0.05, y_lower + 0.5 * size_it_sample, str(i))
-        
-        y_lower = y_upper+10
-    
-    sh3.set_title("Gaussian Mixture")
-    #sh3.set_xlabel("The silhouette coefficient values")
-    sh3.set_ylabel("Cluster label")
-    sh3.axvline(x=silhouette_avg, color="red", linestyle="--")   
-    sh3.set_yticks([])  # Clear the yaxis labels / ticks
-    sh3.set_xticks([-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1])
-    
-    
-    objects = ('Kmeans 9',' Gaussian Mixture 8', 'Gaussian Mixture 18')
-    fig, (barsh) = subplots()
-    ypos = [1,2,3]
-    barsh.bar(ypos, sh, align='center', alpha=0.5)
-    plt.xticks(ypos, objects)
-    plt.ylabel('Silhouette')
-    plt.title('Coeficientes Silhouette medio')
+    #ejecutamos bucle para cada fichero
+    for path in train_path_list:
+        #carga y procesado inicail
+        raw = mne.io.read_raw_edf(path+".edf", preload=True, verbose=False)
 
-    plt.show()
+        raw.resample(100)
+        raw.filter(0.3, 45)
+        aux = raw.n_times/100
+        raw.crop(tmax=(aux - 30*30), include_tmax = False)
+
+        raw.drop_channels(['ROC-A1', 'LOC-A2'])#eliminamos las columnas que no interesen
+
+        #Pasamos a matriz y pasamos a mV las medidas
+        data = raw.get_data() * 1e6
+        
+        print("50% del dataset")
+        
+        mediastd = np.zeros([data.shape[0]*4, int(data.shape[1]/(30*100))])
+        print(mediastd.shape)
+
+        #Colapsamos las épocas o extraemos las características según lo que queramos probar
+        if metodo == "nada":
+            mediastd = agrupar_epocas(raw)
+        else:
+            mediastd = extraer_caracteristicas(raw)
+            
+            
+        #carga de etiquetas
+        hypno = np.loadtxt(path+"_1.txt", dtype=str)[0:-30]
+        hypno = tagHomo(hypno)
+        
+        #bloque de comprobación
+        if(mediastd.shape[0] == len(hypno)):
+            print("Todo correcto")
+        else:
+            print("Error, diferente número de muestras y etiquetas")
+        
+        #EN caso de cargar más de un dataset los concatenamos
+        if out == 1:
+            if metodo == "nada":
+                out_mat = np.vstack((out_mat,mediastd))
+            else:
+                out_mat = pd.merge(out_mat,mediastd)
+            
+            out_tag.append(hypno)
+        else:
+            print("furula")
+
+            out_mat = mediastd
+            out_tag = hypno
+            out = 1
+        
+        print("100% del dataset")
+        
+    return([out_mat, out_tag])
+
+def test_loader(metodo = "nada"):
+    #cargamos los path a lso documentos
+    train_path_list = ['../data_sleep/10/10']
+    out = 0
+    
+    #ejecutamos bucle para cada fichero
+    for path in train_path_list:
+        #carga y procesado inicail
+        raw = mne.io.read_raw_edf(path+".edf", preload=True, verbose=False)
+
+        raw.resample(100)
+        raw.filter(0.3, 45)
+        aux = raw.n_times/100
+        raw.crop(tmax=(aux - 30*30), include_tmax = False)
+
+        raw.drop_channels(['ROC-A1', 'LOC-A2'])#eliminamos las columnas que no interesen
+
+        #Pasamos a matriz y pasamos a mV las medidas
+        data = raw.get_data() * 1e6
+        
+        print("50% del dataset")
+        
+        mediastd = np.zeros([data.shape[0]*4, int(data.shape[1]/(30*100))])
+        print(mediastd.shape)
+
+        #Colapsamos las épocas o extraemos las características según lo que queramos probar
+        if metodo == "nada":
+            mediastd = agrupar_epocas(raw)
+        else:
+            mediastd = extraer_caracteristicas(raw)
+            
+            
+        #carga de etiquetas
+        hypno = np.loadtxt(path+"_1.txt", dtype=str)[0:-30]
+        hypno = tagHomo(hypno)
+        
+        #bloque de comprobación
+        if(mediastd.shape[0] == len(hypno)):
+            print("Todo correcto")
+        else:
+            print("Error, diferente número de muestras y etiquetas")
+        
+        #EN caso de cargar más de un dataset los concatenamos
+        if out == 1:
+            if metodo == "nada":
+                out_mat = np.vstack((out_mat,mediastd))
+            else:
+                out_mat = pd.concat([out_mat,mediastd], axis=0)
+            
+            out_tag.append(hypno)
+        else:
+            print("furula")
+
+            out_mat = mediastd
+            out_tag = hypno
+            out = 1
+        
+        print("100% del dataset")
+        
+    return([out_mat, out_tag])
