@@ -126,7 +126,7 @@ def extraer_caracteristicas(raw):
         
     return  df2
 
-def train_loader(metodo = "nada"):
+def data_loader(train_path_list = ['../data_sleep/8/8','../data_sleep/9/9'],metodo = "nada"):
     #cargamos los path a lso documentos
     train_path_list = ['../data_sleep/8/8','../data_sleep/9/9']
     out = 0
@@ -141,7 +141,7 @@ def train_loader(metodo = "nada"):
         aux = raw.n_times/100
         raw.crop(tmax=(aux - 30*30), include_tmax = False)
 
-        raw.drop_channels(['ROC-A1', 'LOC-A2'])#eliminamos las columnas que no interesen
+        #raw.drop_channels(['ROC-A1', 'LOC-A2'])#eliminamos las columnas que no interesen
 
         #Pasamos a matriz y pasamos a mV las medidas
         data = raw.get_data() * 1e6
@@ -173,7 +173,7 @@ def train_loader(metodo = "nada"):
             if metodo == "nada":
                 out_mat = np.vstack((out_mat,mediastd))
             else:
-                out_mat = pd.merge(out_mat,mediastd)
+                out_mat = pd.concat([out_mat,mediastd],axis = 0)
             
             out_tag.append(hypno)
         else:
@@ -187,63 +187,3 @@ def train_loader(metodo = "nada"):
         
     return([out_mat, out_tag])
 
-def test_loader(metodo = "nada"):
-    #cargamos los path a lso documentos
-    train_path_list = ['../data_sleep/10/10']
-    out = 0
-    
-    #ejecutamos bucle para cada fichero
-    for path in train_path_list:
-        #carga y procesado inicail
-        raw = mne.io.read_raw_edf(path+".edf", preload=True, verbose=False)
-
-        raw.resample(100)
-        raw.filter(0.3, 45)
-        aux = raw.n_times/100
-        raw.crop(tmax=(aux - 30*30), include_tmax = False)
-
-        raw.drop_channels(['ROC-A1', 'LOC-A2'])#eliminamos las columnas que no interesen
-
-        #Pasamos a matriz y pasamos a mV las medidas
-        data = raw.get_data() * 1e6
-        
-        print("50% del dataset")
-        
-        mediastd = np.zeros([data.shape[0]*4, int(data.shape[1]/(30*100))])
-        print(mediastd.shape)
-
-        #Colapsamos las épocas o extraemos las características según lo que queramos probar
-        if metodo == "nada":
-            mediastd = agrupar_epocas(raw)
-        else:
-            mediastd = extraer_caracteristicas(raw)
-            
-            
-        #carga de etiquetas
-        hypno = np.loadtxt(path+"_1.txt", dtype=str)[0:-30]
-        hypno = tagHomo(hypno)
-        
-        #bloque de comprobación
-        if(mediastd.shape[0] == len(hypno)):
-            print("Todo correcto")
-        else:
-            print("Error, diferente número de muestras y etiquetas")
-        
-        #EN caso de cargar más de un dataset los concatenamos
-        if out == 1:
-            if metodo == "nada":
-                out_mat = np.vstack((out_mat,mediastd))
-            else:
-                out_mat = pd.concat([out_mat,mediastd], axis=0)
-            
-            out_tag.append(hypno)
-        else:
-            print("furula")
-
-            out_mat = mediastd
-            out_tag = hypno
-            out = 1
-        
-        print("100% del dataset")
-        
-    return([out_mat, out_tag])
