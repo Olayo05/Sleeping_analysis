@@ -181,12 +181,12 @@ def data_loader(train_path_list = ['../data_sleep/8/8','../data_sleep/9/9'],meto
             else:
                 out_mat = pd.concat([out_mat,mediastd],axis = 0)
             
-            out_tag.append(hypno)
+            out_tag = out_tag + hypno.copy()
         else:
             print("furula")
 
             out_mat = mediastd
-            out_tag = hypno
+            out_tag = hypno.copy()
             out = 1
         
         print("100% del dataset")
