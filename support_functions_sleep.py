@@ -134,7 +134,7 @@ def extraer_caracteristicas(raw):
 
 def data_loader(train_path_list = ['../data_sleep/8/8','../data_sleep/9/9'],metodo = "nada"):
     #cargamos los path a lso documentos
-    train_path_list = ['../data_sleep/8/8','../data_sleep/9/9']
+    
     out = 0
     
     #ejecutamos bucle para cada fichero
